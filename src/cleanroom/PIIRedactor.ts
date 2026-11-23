@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 import { EncryptionVault, EncryptedPayload } from './EncryptionVault';
 
 export interface RedactionResult {
@@ -12,6 +12,13 @@ export interface PIIRule {
   type: string;
   regex: RegExp;
   tokenPrefix: string;
+}
+
+function generateSecureToken(prefix: string): string {
+  if (typeof crypto.randomUUID === 'function') {
+    return `${prefix}${crypto.randomUUID().substring(0, 8)}]`;
+  }
+  return `${prefix}${crypto.randomBytes(4).toString('hex')}]`;
 }
 
 /**
@@ -48,6 +55,11 @@ export class PIIRedactor {
       tokenPrefix: '[REDACTED_MRN_'
     },
     {
+      type: 'MEDICAL_ID',
+      regex: /\b[A-Z]{2}\d{6,10}\b/g,
+      tokenPrefix: '[REDACTED_MED_ID_'
+    },
+    {
       type: 'DOB',
       regex: /\b(?:DOB|born|birthdate)[:\s]+(?:\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})\b/gi,
       tokenPrefix: '[REDACTED_DOB_'
@@ -58,9 +70,19 @@ export class PIIRedactor {
       tokenPrefix: '[REDACTED_ZIP_'
     },
     {
+      type: 'ADDRESS',
+      regex: /\b\d+\s+[\w\s]+(?:street|st|avenue|ave|road|rd|highway|hwy|square|sq|trail|trl|drive|dr|court|ct|parkway|pkwy|circle|cir|boulevard|blvd)\b/gi,
+      tokenPrefix: '[REDACTED_ADDRESS_'
+    },
+    {
       type: 'IP_ADDRESS',
       regex: /\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b/g,
       tokenPrefix: '[REDACTED_IP_'
+    },
+    {
+      type: 'URL',
+      regex: /https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&\/=]*)/g,
+      tokenPrefix: '[REDACTED_URL_'
     }
   ];
 
@@ -82,10 +104,10 @@ export class PIIRedactor {
       const matches = Array.from(text.matchAll(rule.regex));
       for (const match of matches) {
         const rawValue = match[0];
-        const token = `${rule.tokenPrefix}${uuidv4().substring(0, 8)}]`;
+        const token = generateSecureToken(rule.tokenPrefix);
         
         vaultMap[token] = this.vault.encrypt(rawValue);
-        scrubbedText = scrubbedText.replace(rawValue, token);
+        scrubbedText = scrubbedText.split(rawValue).join(token);
         
         detectedTypes.add(rule.type);
         detectionCount++;
@@ -105,7 +127,7 @@ export class PIIRedactor {
     for (const [token, encrypted] of Object.entries(vaultMap)) {
       try {
         const rawValue = this.vault.decrypt(encrypted);
-        restored = restored.replace(token, rawValue);
+        restored = restored.split(token).join(rawValue);
       } catch (err) {
         console.error(`Failed to restore token ${token}:`, err);
       }

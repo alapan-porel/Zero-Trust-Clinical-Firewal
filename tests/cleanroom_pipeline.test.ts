@@ -16,6 +16,19 @@ describe('Clinical Cleanroom Layer 0 Pipeline', () => {
     expect(restored).toBe(text);
   });
 
+  it('scrubs street addresses, medical IDs, and URLs and restores cleanly', () => {
+    const text = 'Located at 124 Medical Center Boulevard, patient ID AB12345678, portal https://portal.hospital.org/chart';
+    const report = cleanroom.inspectInbound(text);
+
+    expect(report.redaction.detectionCount).toBeGreaterThanOrEqual(3);
+    expect(report.cleanroomScrubbedPrompt).not.toContain('124 Medical Center Boulevard');
+    expect(report.cleanroomScrubbedPrompt).not.toContain('AB12345678');
+    expect(report.cleanroomScrubbedPrompt).not.toContain('https://portal.hospital.org/chart');
+
+    const restored = cleanroom.redactor.restore(report.cleanroomScrubbedPrompt, report.redaction.vaultMap);
+    expect(restored).toBe(text);
+  });
+
   it('triggers critical escalation on explicit suicide mentions', () => {
     const text = 'I want to kill myself, everything is hopeless.';
     const report = cleanroom.inspectInbound(text);
